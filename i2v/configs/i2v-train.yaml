@@ -1,0 +1,390 @@
+# @package _global_
+
+launcher:
+  num_nodes: 1
+  gpus_per_node: 8
+  experiment_log_dir: ./logs/sam-i2v_8gpu
+
+scratch:
+  resolution: 1024
+  train_batch_size_sa1b: 8
+  train_batch_size_sav: 1
+  num_train_workers: 8
+  num_frames: 8
+  max_num_objects: 1
+  token_num: 3
+  base_lr: 3.0e-4
+  vision_lr: 6.0e-05
+  phases_per_epoch: 1
+  num_epochs: 10
+
+dataset:
+  root: /workspace/i2v
+  sa1b_img_folder: ${dataset.root}/data/sa1b_train_jpg
+  sa1b_gt_folder: ${dataset.root}/data/sa1b_train_json
+  sa1b_file_list_txt: txt/sa1b_10k_train_list.txt  # Optional PATH to filelist containing a subset of images to be used for training
+  sav_img_folder: ${dataset.root}/data/sav_train_jpg
+  sav_gt_folder: ${dataset.root}/data/sav_train_json
+  sav_file_list_txt: txt/sav_train_list.txt  # Optional PATH to filelist containing a subset of videos to be used for training
+  reverse_time_prob: 0.5
+
+vos:
+  train_transforms:
+    - _target_: dataset.transforms.ComposeAPI
+      transforms:
+        - _target_: dataset.transforms.RandomHorizontalFlip
+          consistent_transform: True
+        - _target_: dataset.transforms.RandomAffine
+          degrees: 25
+          shear: 20
+          image_interpolation: bilinear
+          consistent_transform: True
+        - _target_: dataset.transforms.RandomResizeAPI
+          sizes: ${scratch.resolution}
+          square: true
+          consistent_transform: True
+        - _target_: dataset.transforms.ColorJitter
+          consistent_transform: True
+          brightness: 0.1
+          contrast: 0.03
+          saturation: 0.03
+          hue: null
+        - _target_: dataset.transforms.RandomGrayscale
+          p: 0.05
+          consistent_transform: True
+        - _target_: dataset.transforms.ColorJitter
+          consistent_transform: False
+          brightness: 0.1
+          contrast: 0.05
+          saturation: 0.05
+          hue: null
+        - _target_: dataset.transforms.ToTensorAPI
+        - _target_: dataset.transforms.NormalizeAPI
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+
+trainer:
+  _target_: trainer.Trainer
+  mode: train_only
+  max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
+  accelerator: cuda
+  seed_value: 123
+
+  model:
+    _target_: model.i2v.I2VTrain
+    image_encoder:
+      _target_: i2v.modeling.backbones.image_encoder_i2v.ImageEncoder
+      trunk_image:
+        _target_: i2v.modeling.backbones.tiny_vit_sam.TinyViT
+        img_size: 1024
+        in_chans: 3
+        num_classes: 1000
+        embed_dims: [ 64, 128, 160, 320 ]
+        depths: [ 2, 2, 6, 2 ]
+        num_heads: [ 2, 4, 5, 10 ]
+        window_sizes: [ 7, 7, 14, 7 ]
+        mlp_ratio: 4.
+        drop_rate: 0.
+        drop_path_rate: 0.0
+        use_checkpoint: False
+        mbconv_expand_ratio: 4.0
+        local_conv_size: 3
+      trunk_video:
+        _target_: i2v.modeling.backbones.tfi.TFI
+        d_model_list: [ 160, 320, 256 ]
+        s_patch_size: 16
+        t_patch_size: 5
+        t_window: 5
+        temporal_kernel_size: 3
+        temporal_conv_mlp_ratio: 1
+        integration_dim: 256
+        temporal_dim: 96
+        temporal_loop_layers: 3
+        selected_layers: [ 2, 3, 4 ]
+      neck:
+        _target_: i2v.modeling.backbones.image_encoder_i2v.FpnNeck
+        position_encoding:
+          _target_: i2v.modeling.position_encoding.PositionEmbeddingSine
+          num_pos_feats: 256
+          normalize: true
+          scale: null
+          temperature: 10000
+        d_model: 256
+    memory_attention:
+      _target_: i2v.modeling.memory_attention.MemoryAttention
+      d_model: 256
+      pos_enc_at_input: true
+      layer:
+        _target_: i2v.modeling.memory_attention.MemoryAttentionLayer
+        activation: relu
+        use_checkpoint: false
+        dim_feedforward: 512
+        dropout: 0.1
+        pos_enc_at_attn: false
+        self_attention:
+          _target_: i2v.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [ 64, 64 ]
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+        d_model: 256
+        pos_enc_at_cross_attn_keys: true
+        pos_enc_at_cross_attn_queries: false
+        cross_attention:
+          _target_: i2v.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [ 64, 64 ]
+          rope_k_repeat: True
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+          kv_in_dim: 64
+      num_layers: 4
+    memory_encoder:
+      _target_: i2v.modeling.memory_encoder.MemoryEncoder
+      out_dim: 64
+      position_encoding:
+        _target_: i2v.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 64
+        normalize: true
+        scale: null
+        temperature: 10000
+      mask_downsampler:
+        _target_: i2v.modeling.memory_encoder.MaskDownSampler
+        kernel_size: 3
+        stride: 2
+        padding: 1
+      fuser:
+        _target_: i2v.modeling.memory_encoder.Fuser
+        layer:
+          _target_: i2v.modeling.memory_encoder.CXBlock
+          dim: 256
+          kernel_size: 7
+          padding: 3
+          layer_scale_init_value: 1e-6
+          use_dwconv: True
+        num_layers: 2
+    memory_prompt_generator:
+      _target_: i2v.modeling.sam.memory_prompt_generator_fg.MemoryPromptGeneratorFG
+      embed_dim: 256
+      num_queries: ${scratch.token_num}
+      activation: relu
+      dropout: 0.1
+      pos_enc_at_attn: false
+      self_attention:
+        _target_: i2v.modeling.sam.transformer.RoPEAttention_for_MPG
+        rope_theta: 10000.0
+        q_num: ${scratch.token_num}
+        embedding_dim: 256
+        num_heads: 1
+        downsample_rate: 1
+        dropout: 0.1
+      pos_enc_at_cross_attn_keys: true
+      pos_enc_at_cross_attn_queries: false
+      cross_attention:
+        _target_: i2v.modeling.sam.transformer.RoPEAttention_MA_for_MPG
+        rope_theta: 10000.0
+        q_num: ${scratch.token_num}
+        feat_sizes: [ 64, 64 ]
+        rope_k_repeat: True
+        embedding_dim: 256
+        num_heads: 1
+        downsample_rate: 1
+        dropout: 0.1
+        kv_in_dim: 64
+
+    num_maskmem: 7
+    image_size: ${scratch.resolution}
+    # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
+    # SAM decoder
+    sigmoid_scale_for_mem_enc: 20.0
+    sigmoid_bias_for_mem_enc: -10.0
+    use_mask_input_as_output_without_sam: true
+    # Memory
+    directly_add_no_mem_embed: true
+    no_obj_embed_spatial: true
+    # use high-resolution feature map in the SAM mask decoder
+    use_high_res_features_in_sam: false
+    # output 3 masks on the first click on initial conditioning frames
+    multimask_output_in_sam: true
+    # SAM heads
+    iou_prediction_use_sigmoid: True
+    # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
+    use_obj_ptrs_in_encoder: true
+    add_tpos_enc_to_obj_ptrs: true
+    proj_tpos_enc_in_obj_ptrs: true
+    use_signed_tpos_enc_to_obj_ptrs: true
+    only_obj_ptrs_in_the_past_for_eval: true
+    # object occlusion prediction
+    pred_obj_scores: true
+    pred_obj_scores_mlp: true
+    fixed_no_obj_ptr: true
+    # multimask tracking settings
+    multimask_output_for_tracking: true
+    use_multimask_token_for_obj_ptr: true
+    multimask_min_pt_num: 0
+    multimask_max_pt_num: 1
+    use_mlp_for_obj_ptr_proj: true
+    # Compilation flag
+    # HieraT does not currently support compilation, should always be set to False
+    # compile_image_encoder: False
+
+    ####### train specific params #######
+    # box/point input and corrections
+    prob_to_use_pt_input_for_train: 0.5
+    prob_to_use_pt_input_for_eval: 0.0
+    prob_to_use_box_input_for_train: 0.5  # 0.5*0.5 = 0.25 prob to use box instead of points
+    prob_to_use_box_input_for_eval: 0.0
+    prob_to_sample_from_gt_for_train: 0.1  # with a small prob, sampling correction points from GT mask instead of prediction errors
+    num_frames_to_correct_for_train: 2  # iteratively sample on random 1~2 frames (always include the first frame)
+    num_frames_to_correct_for_eval: 1  # only iteratively sample on first frame
+    rand_frames_to_correct_for_train: True  # random #init-cond-frame ~ 2
+    add_all_frames_to_correct_as_cond: True  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)
+    # maximum 2 initial conditioning frames
+    num_init_cond_frames_for_train: 2
+    rand_init_cond_frames_for_train: True  # random 1~2
+    num_correction_pt_per_frame: 7
+    use_act_ckpt_iterative_pt_sampling: false
+
+    num_init_cond_frames_for_eval: 1  # only mask on the first frame
+    forward_backbone_per_frame_for_eval: True
+
+  data:
+    train:
+      _target_: dataset.sam2_datasets.TorchTrainMixedDataset
+      phases_per_epoch: ${scratch.phases_per_epoch} # Chunks a single epoch into smaller phases
+      batch_sizes: # List of batch sizes corresponding to each dataset
+        - ${scratch.train_batch_size_sa1b} # Batch size of dataset 1
+        - ${scratch.train_batch_size_sav} # Batch size of dataset 2
+      datasets:
+        # SA1B as an example of an image dataset
+        - _target_: dataset.vos_dataset.VOSDataset
+          training: true
+          video_dataset:
+            _target_: dataset.vos_raw_dataset.SA1BRawDataset
+            img_folder: ${dataset.sa1b_img_folder}
+            gt_folder: ${dataset.sa1b_gt_folder}
+            file_list_txt: ${dataset.sa1b_file_list_txt} # Optional
+          sampler:
+            _target_: dataset.vos_sampler.RandomUniformSampler
+            num_frames: 1
+            max_num_objects: ${scratch.max_num_objects}
+          transforms: ${vos.train_transforms}
+        - _target_: dataset.vos_dataset.VOSDataset
+          training: true
+          video_dataset:
+            _target_: dataset.vos_raw_dataset.JSONRawDataset
+            img_folder: ${dataset.sav_img_folder}
+            gt_folder: ${dataset.sav_gt_folder}
+            file_list_txt: ${dataset.sav_file_list_txt} # Optional
+            ann_every: 4
+          sampler:
+            _target_: dataset.vos_sampler.RandomUniformSampler
+            num_frames: ${scratch.num_frames}  # Number of frames per video
+            max_num_objects: ${scratch.max_num_objects}
+            reverse_time_prob: ${dataset.reverse_time_prob}  # probability to reverse video
+          transforms: ${vos.train_transforms}
+      shuffle: True
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: True
+      drop_last: True
+      collate_fn:
+        _target_: utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: all
+
+  optim:
+    amp:
+      enabled: True
+      amp_dtype: bfloat16
+
+    optimizer:
+      _target_: torch.optim.AdamW
+
+    gradient_clip:
+      _target_: optimizer.GradientClipper
+      max_norm: 0.1
+      norm_type: 2
+
+    param_group_modifiers:
+      - _target_: optimizer.layer_decay_param_modifier
+        _partial_: True
+        layer_decay_value: 0.9
+        apply_to: 'image_encoder.trunk_image'
+
+    options:
+      lr:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.base_lr}
+            end_value: ${divide:${scratch.base_lr},100}
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.vision_lr}
+            end_value: ${divide:${scratch.vision_lr},100}
+          param_names:
+            - 'image_encoder.trunk_image.*'
+      weight_decay:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.1
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          param_names:
+            - '*bias*'
+          module_cls_names: ['torch.nn.LayerNorm']
+
+  loss:
+    all:
+      _target_: loss_fns_i2v.MultiStepMultiMasksAndIous
+      weight_dict:
+        loss_mask: 20
+        loss_iou: 1
+        loss_class: 1
+      supervise_all_iou: true
+      iou_use_l1_loss: true
+      pred_obj_scores: true
+      focal_gamma_obj_score: 0.0
+      focal_alpha_obj_score: -1.0
+
+  distributed:
+    backend: nccl
+    find_unused_parameters: True
+
+  logging:
+    tensorboard_writer:
+      _target_: utils.logger.make_tensorboard_logger
+      log_dir:  ${launcher.experiment_log_dir}/tensorboard
+      flush_secs: 120
+      should_log: True
+    log_dir: ${launcher.experiment_log_dir}/logs
+    log_freq: 200
+
+  # initialize from checkpoint
+  checkpoint:
+    save_dir: ${launcher.experiment_log_dir}/checkpoints
+    save_freq: 1  # 0 means only last checkpoint is saved.
+    model_weight_initializer:
+      _partial_: True
+      _target_: utils.checkpoint_utils.load_state_dict_into_model
+      ignore_unexpected_keys: null
+      ignore_missing_keys: null
+      state_dict_sam1:
+        _target_: utils.checkpoint_utils.load_checkpoint_and_apply_kernels
+        checkpoint_path: ../checkpoints/tinysam.pth    # PATH to SAM 1 checkpoint
+        ckpt_state_dict_keys: null
+
+# SLURM args if running on a cluster
+submitit:
+  partition: null
+  account: null
+  qos: null
+  cpus_per_task: 10
+  use_cluster: false
+  timeout_hour: 24
+  name: null
+  port_range: [10000, 65000]

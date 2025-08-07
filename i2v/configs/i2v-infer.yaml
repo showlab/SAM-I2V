@@ -1,0 +1,170 @@
+# @package _global_
+
+# Model
+model:
+  _target_: i2v.modeling.i2v_base_infer.I2VBase
+  image_encoder:
+    _target_: i2v.modeling.backbones.image_encoder_i2v.ImageEncoder
+    trunk_image:
+      _target_: i2v.modeling.backbones.tiny_vit_sam.TinyViT
+      img_size: 1024
+      in_chans: 3
+      num_classes: 1000
+      embed_dims: [ 64, 128, 160, 320 ]
+      depths: [ 2, 2, 6, 2 ]
+      num_heads: [ 2, 4, 5, 10 ]
+      window_sizes: [ 7, 7, 14, 7 ]
+      mlp_ratio: 4.
+      drop_rate: 0.
+      drop_path_rate: 0.0
+      use_checkpoint: False
+      mbconv_expand_ratio: 4.0
+      local_conv_size: 3
+    trunk_video:
+      _target_: i2v.modeling.backbones.tfi.TFI
+      d_model_list: [ 160, 320, 256 ]
+      s_patch_size: 16
+      t_patch_size: 5
+      t_window: 5
+      temporal_kernel_size: 3
+      temporal_conv_mlp_ratio: 1
+      integration_dim: 256
+      temporal_dim: 96
+      temporal_loop_layers: 3
+      selected_layers: [ 2, 3, 4 ]
+    neck:
+      _target_: i2v.modeling.backbones.image_encoder_i2v.FpnNeck
+      position_encoding:
+        _target_: i2v.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 256
+        normalize: true
+        scale: null
+        temperature: 10000
+      d_model: 256
+  memory_attention:
+    _target_: i2v.modeling.memory_attention.MemoryAttention
+    d_model: 256
+    pos_enc_at_input: true
+    layer:
+      _target_: i2v.modeling.memory_attention.MemoryAttentionLayer
+      activation: relu
+      dim_feedforward: 512
+      use_checkpoint: false
+      dropout: 0.1
+      pos_enc_at_attn: false
+      self_attention:
+        _target_: i2v.modeling.sam.transformer.RoPEAttention
+        rope_theta: 10000.0
+        feat_sizes: [64, 64]
+        embedding_dim: 256
+        num_heads: 1
+        downsample_rate: 1
+        dropout: 0.1
+      d_model: 256
+      pos_enc_at_cross_attn_keys: true
+      pos_enc_at_cross_attn_queries: false
+      cross_attention:
+        _target_: i2v.modeling.sam.transformer.RoPEAttention
+        rope_theta: 10000.0
+        feat_sizes: [64, 64]
+        rope_k_repeat: True
+        embedding_dim: 256
+        num_heads: 1
+        downsample_rate: 1
+        dropout: 0.1
+        kv_in_dim: 64
+    num_layers: 4
+  memory_encoder:
+      _target_: i2v.modeling.memory_encoder.MemoryEncoder
+      out_dim: 64
+      position_encoding:
+        _target_: i2v.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 64
+        normalize: true
+        scale: null
+        temperature: 10000
+      mask_downsampler:
+        _target_: i2v.modeling.memory_encoder.MaskDownSampler
+        kernel_size: 3
+        stride: 2
+        padding: 1
+      fuser:
+        _target_: i2v.modeling.memory_encoder.Fuser
+        layer:
+          _target_: i2v.modeling.memory_encoder.CXBlock
+          dim: 256
+          kernel_size: 7
+          padding: 3
+          layer_scale_init_value: 1e-6
+          use_dwconv: True
+        num_layers: 2
+  memory_prompt_generator:
+    _target_: i2v.modeling.sam.memory_prompt_generator_fg.MemoryPromptGeneratorFG
+    embed_dim: 256
+    num_queries: 3
+    activation: relu
+    dropout: 0.1
+    pos_enc_at_attn: false
+    self_attention:
+      _target_: i2v.modeling.sam.transformer.RoPEAttention_for_MPG
+      rope_theta: 10000.0
+      q_num: 3
+      embedding_dim: 256
+      num_heads: 1
+      downsample_rate: 1
+      dropout: 0.1
+    pos_enc_at_cross_attn_keys: true
+    pos_enc_at_cross_attn_queries: false
+    cross_attention:
+      _target_: i2v.modeling.sam.transformer.RoPEAttention_MA_for_MPG
+      rope_theta: 10000.0
+      q_num: 3
+      feat_sizes: [ 64, 64 ]
+      rope_k_repeat: True
+      embedding_dim: 256
+      num_heads: 1
+      downsample_rate: 1
+      dropout: 0.1
+      kv_in_dim: 64
+
+  num_maskmem: 7
+  num_maskmem_global_all: 16
+  num_maskmem_global: 4
+  num_maskmem_local_all: 4
+  num_maskmem_local: 2
+  iou_threshold: 0
+
+  image_size: 1024
+  # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
+  # SAM decoder
+  sigmoid_scale_for_mem_enc: 20.0
+  sigmoid_bias_for_mem_enc: -10.0
+  use_mask_input_as_output_without_sam: true
+  # Memory
+  directly_add_no_mem_embed: true
+  no_obj_embed_spatial: true
+  # use high-resolution feature map in the SAM mask decoder
+  use_high_res_features_in_sam: false
+  # output 3 masks on the first click on initial conditioning frames
+  multimask_output_in_sam: true
+  # SAM heads
+  iou_prediction_use_sigmoid: True
+  # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
+  use_obj_ptrs_in_encoder: true
+  add_tpos_enc_to_obj_ptrs: true
+  proj_tpos_enc_in_obj_ptrs: true
+  use_signed_tpos_enc_to_obj_ptrs: true
+  only_obj_ptrs_in_the_past_for_eval: true
+  # object occlusion prediction
+  pred_obj_scores: true
+  pred_obj_scores_mlp: true
+  fixed_no_obj_ptr: true
+  # multimask tracking settings
+  multimask_output_for_tracking: true
+  use_multimask_token_for_obj_ptr: true
+  multimask_min_pt_num: 0
+  multimask_max_pt_num: 1
+  use_mlp_for_obj_ptr_proj: true
+  # Compilation flag
+  # HieraT does not currently support compilation, should always be set to False
+  compile_image_encoder: False
