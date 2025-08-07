@@ -15,6 +15,6 @@ workers=64
 # run evaluation
 prediction_name="Semi_SAVTest_${ckpt}_${input}"
 python ../tools/sav_evaluator.py \
---gt_root /workspace/haiyang/i2v/data/sav_test/Annotations_6fps \
+--gt_root /workspace/i2v/data/sav_test/Annotations_6fps \
 --pred_root ./output_semi/${save_dir_name}/${prediction_name} \
 --num_processes ${workers}
