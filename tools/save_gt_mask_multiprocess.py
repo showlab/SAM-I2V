@@ -37,7 +37,7 @@ def load_mask(mask, color_dict):
 def save_gt_mask(path):
     print('Processing sequence: ' + path.split('/')[-1])
 
-    save_root = '/workspace/haiyang/i2v/data/sav_test/masks_info'
+    save_root = '/workspace/i2v/data/sav_test/mask_info'
     save_path = os.path.join(save_root, os.path.basename(path))
     os.makedirs(save_path, exist_ok=True)
 
@@ -82,7 +82,7 @@ def save_gt_mask(path):
         np.save(os.path.join(save_path, f'{instance_id:03d}.npy'), cur_mask)
 
 def main():
-    dataset_path = '/workspace/haiyang/i2v/data/sav_test/Annotations_6fps'
+    dataset_path = '/workspace/i2v/data/sav_test/Annotations_6fps'
     dataset_dir = sorted(os.listdir(dataset_path))
     dataset_dir = [os.path.join(dataset_path, i) for i in dataset_dir if os.path.isdir(os.path.join(dataset_path, i))]
 
