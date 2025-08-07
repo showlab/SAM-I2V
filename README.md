@@ -1,4 +1,4 @@
-## SAM-I2V: Upgrading SAM to Support Promptable Video Segmentation with Less than 0.2% Training Cost
+## [CVPR 2025] SAM-I2V: Upgrading SAM to Support Promptable Video Segmentation with Less than 0.2% Training Cost
 
 **[Show Lab @ NUS](https://sites.google.com/view/showlab)**
 
