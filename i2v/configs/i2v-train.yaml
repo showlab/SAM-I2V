@@ -68,7 +68,7 @@ trainer:
   mode: train_only
   max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
   accelerator: cuda
-  seed_value: 123
+  seed_value: 2024
 
   model:
     _target_: model.i2v.I2VTrain
