@@ -1,4 +1,4 @@
-## SAM-I2V: Upgrading SAM to Support Promptable Video Segmentation with Less than 0.2% Training Cost
+## [CVPR 2025] SAM-I2V: Upgrading SAM to Support Promptable Video Segmentation with Less than 0.2% Training Cost
 
 **[Show Lab @ NUS](https://sites.google.com/view/showlab)**
 
@@ -128,7 +128,8 @@ sh semi_eval.sh
 
 - Single node with 8 GPUs:
 ```
-sh train.sh
+nohup sh train.sh > txt/8gpu.txt 2>&1 & disown
+tail -f txt/8gpu.txt -n 9999999
 ```
 
 - Multi-node with each node has 8 GPUs (e.g., 4x8=32 GPUs):
