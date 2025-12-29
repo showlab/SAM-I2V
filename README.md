@@ -20,7 +20,7 @@
   * [6. License](#6-license)
   * [7. Contact](#7-contact)
 
-### 🎉 Update (TPAMI 2026)  
+### 🎉 2025.12 Update (TPAMI 2026)  
 Our latest work, **SAM-I2V++**, further extends SAM-I2V toward more effective training-efficient promptable video segmentation.  
 🚀 https://github.com/showlab/SAM-I2VPP
 
