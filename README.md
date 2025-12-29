@@ -25,6 +25,7 @@
 > training-efficient promptable video segmentation.  
 > 🚀 https://github.com/showlab/SAM-I2VPP
 
+
 ### 1. Overview
 
 **SAM-I2V** is a training-efficient method to upgrade the image-based SAM for promptable video segmentation. It achieves over **90%** of SAM 2’s performance while requiring only **0.2%** of its training cost.
