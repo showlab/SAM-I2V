@@ -152,6 +152,14 @@ If you use SAM-I2V in your research, please use the following BibTeX entry.
     year      = {2025},
     pages     = {3417-3426}
 }
+
+
+@article{Mei_2026_TPAMI,
+    author    = {Mei, Haiyang and Zhang, Pengyu and Shou, Mike Zheng},
+    title     = {SAM-I2V++: Efficiently Upgrading SAM for Promptable Video Segmentation},
+    journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)},
+    year      = {2026},
+}
 ```
 
 ### 6. License
